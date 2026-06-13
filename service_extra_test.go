@@ -115,3 +115,51 @@ func TestStartHTTPServer_CreatesServer(t *testing.T) {
 		t.Fatalf("unexpected addr: %s", srv.Addr)
 	}
 }
+
+func TestIdempotency_FailedThenRetry(t *testing.T) {
+	repo, svc, cleanup := setupInMemory(t)
+	defer cleanup()
+
+	_ = repo.CreateWallet("f_src", 10)
+	_ = repo.CreateWallet("f_dst", 0)
+
+	key := "fail-key"
+	_, err := svc.Transfer(context.TODO(), TransferRequest{IdempotencyKey: key, FromWalletID: "f_src", ToWalletID: "f_dst", Amount: 100})
+	if err == nil {
+		t.Fatalf("expected insufficient funds on first attempt")
+	}
+	if err != ErrInsufficientFunds {
+		t.Fatalf("expected ErrInsufficientFunds, got %v", err)
+	}
+
+	// idempotency record should be finalized as FAILED with known response
+	tid, status, resp, err := repo.GetIdempotency(context.TODO(), key)
+	if err != nil {
+		t.Fatalf("GetIdempotency: %v", err)
+	}
+	if status != "FAILED" {
+		t.Fatalf("expected FAILED idempotency status, got %s", status)
+	}
+	if resp != "insufficient_funds" {
+		t.Fatalf("expected response 'insufficient_funds', got %s", resp)
+	}
+	if tid == "" {
+		t.Fatalf("expected transfer id saved in idempotency record")
+	}
+
+	// Retry with same key should return the same terminal error quickly
+	_, err2 := svc.Transfer(context.TODO(), TransferRequest{IdempotencyKey: key, FromWalletID: "f_src", ToWalletID: "f_dst", Amount: 100})
+	if err2 == nil {
+		t.Fatalf("expected error on retry")
+	}
+	if err2 != ErrInsufficientFunds {
+		t.Fatalf("expected ErrInsufficientFunds on retry, got %v", err2)
+	}
+
+	// balances unchanged
+	b1, _ := repo.GetWalletBalance("f_src")
+	b2, _ := repo.GetWalletBalance("f_dst")
+	if b1 != 10 || b2 != 0 {
+		t.Fatalf("balances changed after failed attempts: %d %d", b1, b2)
+	}
+}
