@@ -1,6 +1,9 @@
 package main
 
-import "time"
+import (
+	"database/sql"
+	"time"
+)
 
 type Wallet struct {
 	ID        string `db:"id"`
@@ -28,13 +31,8 @@ type LedgerEntry struct {
 
 type IdempotencyRecord struct {
 	Key        string
-	TransferID sqlNullString
+	TransferID sql.NullString
 	Status     string
-	Response   sqlNullString
+	Response   sql.NullString
 	CreatedAt  time.Time
-}
-
-type sqlNullString struct {
-	Valid bool
-	Str   string
 }
