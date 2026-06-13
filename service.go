@@ -72,12 +72,14 @@ func (s *Service) Transfer(ctx context.Context, req TransferRequest) (TransferRe
 			wait := time.Millisecond * 50
 			pollCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
+			ticker := time.NewTicker(wait)
+			defer ticker.Stop()
 			for {
 				select {
 				case <-pollCtx.Done():
 					return TransferResult{}, errors.New("idempotency key in progress (timeout)")
-				case <-time.After(wait):
-					tid, status, resp, err := s.repo.GetIdempotency(ctx, req.IdempotencyKey)
+				case <-ticker.C:
+					tid, status, resp, err := s.repo.GetIdempotency(pollCtx, req.IdempotencyKey)
 					if err == nil {
 						if status == "COMPLETED" {
 							return TransferResult{TransferID: tid, State: "PROCESSED"}, nil
