@@ -10,9 +10,13 @@ import (
 )
 
 func TestTransfer_QuickIdempotency(t *testing.T) {
-	db, _ := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
+	defer db.Close()
 	if err := migrate(db); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -20,7 +24,7 @@ func TestTransfer_QuickIdempotency(t *testing.T) {
 	svc := NewService(repo)
 
 	// insert completed idempotency
-	_, err := db.Exec(`INSERT INTO idempotency_records (idempotency_key, transfer_id, status) VALUES (?, ?, ?)`, "quickk", "t_quick", "COMPLETED")
+	_, err = db.Exec(`INSERT INTO idempotency_records (idempotency_key, transfer_id, status) VALUES (?, ?, ?)`, "quickk", "t_quick", "COMPLETED")
 	if err != nil {
 		t.Fatalf("insert idempotency: %v", err)
 	}
@@ -35,9 +39,13 @@ func TestTransfer_QuickIdempotency(t *testing.T) {
 }
 
 func TestTransfer_InsertIdempotencyConflictPoll(t *testing.T) {
-	db, _ := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
+	defer db.Close()
 	if err := migrate(db); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -47,7 +55,7 @@ func TestTransfer_InsertIdempotencyConflictPoll(t *testing.T) {
 	// create wallets and a transfer row that will be referenced
 	_, _ = db.Exec(`INSERT INTO wallets (id, balance) VALUES (?, ?)`, "x", 0)
 	_, _ = db.Exec(`INSERT INTO wallets (id, balance) VALUES (?, ?)`, "y", 0)
-	_, err := db.Exec(`INSERT INTO transfers (id, from_wallet_id, to_wallet_id, amount, state) VALUES (?, ?, ?, ?, ?)`, "t_conf", "x", "y", 1, "PROCESSED")
+	_, err = db.Exec(`INSERT INTO transfers (id, from_wallet_id, to_wallet_id, amount, state) VALUES (?, ?, ?, ?, ?)`, "t_conf", "x", "y", 1, "PROCESSED")
 	if err != nil {
 		t.Fatalf("insert transfer: %v", err)
 	}
@@ -89,9 +97,13 @@ func TestTransfer_InsufficientFunds_Service(t *testing.T) {
 }
 
 func TestStartHTTPServer_CreatesServer(t *testing.T) {
-	db, _ := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
+	defer db.Close()
 	if err := migrate(db); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}

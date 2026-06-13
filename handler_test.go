@@ -12,11 +12,15 @@ import (
 )
 
 func TestCreateTransferHandler_Success(t *testing.T) {
-	db, _ := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	defer db.Close()
 	if err := migrate(db); err != nil {
 		t.Fatalf("migrate: %v", err)
-		db.SetMaxOpenConns(1)
-		db.SetMaxIdleConns(1)
 	}
 	repo := NewRepository(db)
 	svc := NewService(repo)
@@ -51,11 +55,15 @@ func TestCreateTransferHandler_Success(t *testing.T) {
 }
 
 func TestCreateTransferHandler_InsufficientFunds(t *testing.T) {
-	db, _ := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	defer db.Close()
 	if err := migrate(db); err != nil {
 		t.Fatalf("migrate: %v", err)
-		db.SetMaxOpenConns(1)
-		db.SetMaxIdleConns(1)
 	}
 	repo := NewRepository(db)
 	svc := NewService(repo)
@@ -84,15 +92,19 @@ func TestCreateTransferHandler_InsufficientFunds(t *testing.T) {
 }
 
 func TestHandler_IdempotencyQuickReturn(t *testing.T) {
-	db, _ := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	defer db.Close()
 	if err := migrate(db); err != nil {
 		t.Fatalf("migrate: %v", err)
-		db.SetMaxOpenConns(1)
-		db.SetMaxIdleConns(1)
 	}
 	repo := NewRepository(db)
 	// pre-insert an idempotency record as COMPLETED
-	_, err := db.Exec(`INSERT INTO idempotency_records (idempotency_key, transfer_id, status) VALUES (?, ?, ?)`, "ik1", "t_existing", "COMPLETED")
+	_, err = db.Exec(`INSERT INTO idempotency_records (idempotency_key, transfer_id, status) VALUES (?, ?, ?)`, "ik1", "t_existing", "COMPLETED")
 	if err != nil {
 		t.Fatalf("insert idempotency: %v", err)
 	}
@@ -119,11 +131,15 @@ func TestHandler_IdempotencyQuickReturn(t *testing.T) {
 }
 
 func TestCreateTransferHandler_MethodNotAllowed(t *testing.T) {
-	db, _ := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	defer db.Close()
 	if err := migrate(db); err != nil {
 		t.Fatalf("migrate: %v", err)
-		db.SetMaxOpenConns(1)
-		db.SetMaxIdleConns(1)
 	}
 	repo := NewRepository(db)
 	svc := NewService(repo)
@@ -142,11 +158,15 @@ func TestCreateTransferHandler_MethodNotAllowed(t *testing.T) {
 }
 
 func TestCreateTransferHandler_BadJSON(t *testing.T) {
-	db, _ := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	defer db.Close()
 	if err := migrate(db); err != nil {
 		t.Fatalf("migrate: %v", err)
-		db.SetMaxOpenConns(1)
-		db.SetMaxIdleConns(1)
 	}
 	repo := NewRepository(db)
 	svc := NewService(repo)
