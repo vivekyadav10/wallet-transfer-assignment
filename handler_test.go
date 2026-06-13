@@ -15,6 +15,8 @@ func TestCreateTransferHandler_Success(t *testing.T) {
 	db, _ := sql.Open("sqlite3", ":memory:")
 	if err := migrate(db); err != nil {
 		t.Fatalf("migrate: %v", err)
+		db.SetMaxOpenConns(1)
+		db.SetMaxIdleConns(1)
 	}
 	repo := NewRepository(db)
 	svc := NewService(repo)
@@ -52,6 +54,8 @@ func TestCreateTransferHandler_InsufficientFunds(t *testing.T) {
 	db, _ := sql.Open("sqlite3", ":memory:")
 	if err := migrate(db); err != nil {
 		t.Fatalf("migrate: %v", err)
+		db.SetMaxOpenConns(1)
+		db.SetMaxIdleConns(1)
 	}
 	repo := NewRepository(db)
 	svc := NewService(repo)
@@ -83,6 +87,8 @@ func TestHandler_IdempotencyQuickReturn(t *testing.T) {
 	db, _ := sql.Open("sqlite3", ":memory:")
 	if err := migrate(db); err != nil {
 		t.Fatalf("migrate: %v", err)
+		db.SetMaxOpenConns(1)
+		db.SetMaxIdleConns(1)
 	}
 	repo := NewRepository(db)
 	// pre-insert an idempotency record as COMPLETED
@@ -116,6 +122,8 @@ func TestCreateTransferHandler_MethodNotAllowed(t *testing.T) {
 	db, _ := sql.Open("sqlite3", ":memory:")
 	if err := migrate(db); err != nil {
 		t.Fatalf("migrate: %v", err)
+		db.SetMaxOpenConns(1)
+		db.SetMaxIdleConns(1)
 	}
 	repo := NewRepository(db)
 	svc := NewService(repo)
@@ -137,6 +145,8 @@ func TestCreateTransferHandler_BadJSON(t *testing.T) {
 	db, _ := sql.Open("sqlite3", ":memory:")
 	if err := migrate(db); err != nil {
 		t.Fatalf("migrate: %v", err)
+		db.SetMaxOpenConns(1)
+		db.SetMaxIdleConns(1)
 	}
 	repo := NewRepository(db)
 	svc := NewService(repo)

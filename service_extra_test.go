@@ -11,6 +11,8 @@ import (
 
 func TestTransfer_QuickIdempotency(t *testing.T) {
 	db, _ := sql.Open("sqlite3", ":memory:")
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	if err := migrate(db); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -34,6 +36,8 @@ func TestTransfer_QuickIdempotency(t *testing.T) {
 
 func TestTransfer_InsertIdempotencyConflictPoll(t *testing.T) {
 	db, _ := sql.Open("sqlite3", ":memory:")
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	if err := migrate(db); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -86,6 +90,8 @@ func TestTransfer_InsufficientFunds_Service(t *testing.T) {
 
 func TestStartHTTPServer_CreatesServer(t *testing.T) {
 	db, _ := sql.Open("sqlite3", ":memory:")
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	if err := migrate(db); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}

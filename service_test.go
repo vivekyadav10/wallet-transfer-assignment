@@ -15,6 +15,9 @@ func setupInMemory(t *testing.T) (*Repository, *Service, func()) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
+	// ensure a single connection for in-memory SQLite so migrate and tests use same DB
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	if err := migrate(db); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
