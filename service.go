@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -13,6 +14,10 @@ type Service struct {
 }
 
 func NewService(repo *Repository) *Service { return &Service{repo: repo} }
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
 
 type TransferRequest struct {
 	IdempotencyKey string
@@ -38,76 +43,100 @@ func (s *Service) Transfer(ctx context.Context, req TransferRequest) (TransferRe
 
 	// Try quick path: check if completed
 	if req.IdempotencyKey != "" {
-		tid, status, err := s.repo.GetIdempotency(req.IdempotencyKey)
+		tid, status, err := s.repo.GetIdempotency(ctx, req.IdempotencyKey)
 		if err == nil && status == "COMPLETED" {
 			return TransferResult{TransferID: tid, State: "PROCESSED"}, nil
 		}
 	}
 
 	// insert a claim; use a DB transaction so that competing clients will fail the insert
-	tx, err := s.repo.db.Begin()
+	tx, err := s.repo.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return TransferResult{}, err
 	}
 	defer tx.Rollback()
 
 	if req.IdempotencyKey != "" {
-		if err := s.repo.InsertIdempotency(tx, req.IdempotencyKey, "IN_PROGRESS"); err != nil {
-			// insertion failed: someone else claimed it. Poll for completion
-			tx.Commit()
-			// wait for existing to complete
+		if err := s.repo.InsertIdempotency(ctx, tx, req.IdempotencyKey, "IN_PROGRESS"); err != nil {
+			// insertion failed: someone else claimed it. release tx and poll for completion with timeout
+			tx.Rollback()
 			wait := time.Millisecond * 50
-			for i := 0; i < 100; i++ {
-				tid, status, err := s.repo.GetIdempotency(req.IdempotencyKey)
-				if err == nil && status == "COMPLETED" {
-					return TransferResult{TransferID: tid, State: "PROCESSED"}, nil
+			pollCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			for {
+				select {
+				case <-pollCtx.Done():
+					return TransferResult{}, errors.New("idempotency key in progress (timeout)")
+				case <-time.After(wait):
+					tid, status, err := s.repo.GetIdempotency(ctx, req.IdempotencyKey)
+					if err == nil && status == "COMPLETED" {
+						return TransferResult{TransferID: tid, State: "PROCESSED"}, nil
+					}
 				}
-				time.Sleep(wait)
 			}
-			return TransferResult{}, errors.New("idempotency key in progress")
 		}
 	}
 
 	transferID := generateID()
 	t := Transfer{ID: transferID, FromWalletID: req.FromWalletID, ToWalletID: req.ToWalletID, Amount: req.Amount, State: "PENDING"}
-	if err := s.repo.InsertTransfer(tx, t); err != nil {
+	if err := s.repo.InsertTransfer(ctx, tx, t); err != nil {
 		return TransferResult{}, err
 	}
 
 	// try to debit
-	if err := s.repo.DebitIfEnough(tx, req.FromWalletID, req.Amount); err != nil {
-		s.repo.UpdateTransferState(tx, transferID, "FAILED")
-		tx.Commit()
+	if err := s.repo.DebitIfEnough(ctx, tx, req.FromWalletID, req.Amount); err != nil {
+		if uerr := s.repo.UpdateTransferState(ctx, tx, transferID, "FAILED"); uerr != nil {
+			tx.Rollback()
+			return TransferResult{}, uerr
+		}
+		if cerr := tx.Commit(); cerr != nil {
+			return TransferResult{}, cerr
+		}
 		return TransferResult{}, ErrInsufficientFunds
 	}
 
-	if err := s.repo.Credit(tx, req.ToWalletID, req.Amount); err != nil {
-		s.repo.UpdateTransferState(tx, transferID, "FAILED")
-		tx.Commit()
+	if err := s.repo.Credit(ctx, tx, req.ToWalletID, req.Amount); err != nil {
+		if uerr := s.repo.UpdateTransferState(ctx, tx, transferID, "FAILED"); uerr != nil {
+			tx.Rollback()
+			return TransferResult{}, uerr
+		}
+		if cerr := tx.Commit(); cerr != nil {
+			return TransferResult{}, cerr
+		}
 		return TransferResult{}, err
 	}
 
 	// ledger entries
 	debit := LedgerEntry{WalletID: req.FromWalletID, TransferID: transferID, Type: "DEBIT", Amount: req.Amount}
 	credit := LedgerEntry{WalletID: req.ToWalletID, TransferID: transferID, Type: "CREDIT", Amount: req.Amount}
-	if err := s.repo.InsertLedgerEntry(tx, debit); err != nil {
-		s.repo.UpdateTransferState(tx, transferID, "FAILED")
-		tx.Commit()
+	if err := s.repo.InsertLedgerEntry(ctx, tx, debit); err != nil {
+		if uerr := s.repo.UpdateTransferState(ctx, tx, transferID, "FAILED"); uerr != nil {
+			tx.Rollback()
+			return TransferResult{}, uerr
+		}
+		if cerr := tx.Commit(); cerr != nil {
+			return TransferResult{}, cerr
+		}
 		return TransferResult{}, err
 	}
-	if err := s.repo.InsertLedgerEntry(tx, credit); err != nil {
-		s.repo.UpdateTransferState(tx, transferID, "FAILED")
-		tx.Commit()
+	if err := s.repo.InsertLedgerEntry(ctx, tx, credit); err != nil {
+		if uerr := s.repo.UpdateTransferState(ctx, tx, transferID, "FAILED"); uerr != nil {
+			tx.Rollback()
+			return TransferResult{}, uerr
+		}
+		if cerr := tx.Commit(); cerr != nil {
+			return TransferResult{}, cerr
+		}
 		return TransferResult{}, err
 	}
 
-	if err := s.repo.UpdateTransferState(tx, transferID, "PROCESSED"); err != nil {
+	if err := s.repo.UpdateTransferState(ctx, tx, transferID, "PROCESSED"); err != nil {
 		tx.Rollback()
 		return TransferResult{}, err
 	}
 
 	if req.IdempotencyKey != "" {
-		if err := s.repo.CompleteIdempotency(tx, req.IdempotencyKey, transferID); err != nil {
+		if err := s.repo.CompleteIdempotency(ctx, tx, req.IdempotencyKey, transferID); err != nil {
 			tx.Rollback()
 			return TransferResult{}, err
 		}
