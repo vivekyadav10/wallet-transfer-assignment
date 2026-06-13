@@ -72,17 +72,18 @@ func (r *Repository) InsertIdempotency(ctx context.Context, tx *sql.Tx, key stri
 	return err
 }
 
-func (r *Repository) GetIdempotency(ctx context.Context, key string) (string, string, error) {
+func (r *Repository) GetIdempotency(ctx context.Context, key string) (string, string, string, error) {
 	var transferID sql.NullString
 	var status string
-	err := r.db.QueryRowContext(ctx, `SELECT transfer_id, status FROM idempotency_records WHERE idempotency_key = ?`, key).Scan(&transferID, &status)
+	var response sql.NullString
+	err := r.db.QueryRowContext(ctx, `SELECT transfer_id, status, response FROM idempotency_records WHERE idempotency_key = ?`, key).Scan(&transferID, &status, &response)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
-	return transferID.String, status, nil
+	return transferID.String, status, response.String, nil
 }
 
-func (r *Repository) CompleteIdempotency(ctx context.Context, tx *sql.Tx, key, transferID string) error {
-	_, err := tx.ExecContext(ctx, `UPDATE idempotency_records SET transfer_id = ?, status = ? WHERE idempotency_key = ?`, transferID, "COMPLETED", key)
+func (r *Repository) CompleteIdempotency(ctx context.Context, tx *sql.Tx, key, transferID, status, response string) error {
+	_, err := tx.ExecContext(ctx, `UPDATE idempotency_records SET transfer_id = ?, status = ?, response = ? WHERE idempotency_key = ?`, transferID, status, response, key)
 	return err
 }

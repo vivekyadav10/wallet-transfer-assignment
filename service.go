@@ -43,9 +43,18 @@ func (s *Service) Transfer(ctx context.Context, req TransferRequest) (TransferRe
 
 	// Try quick path: check if completed
 	if req.IdempotencyKey != "" {
-		tid, status, err := s.repo.GetIdempotency(ctx, req.IdempotencyKey)
-		if err == nil && status == "COMPLETED" {
-			return TransferResult{TransferID: tid, State: "PROCESSED"}, nil
+		tid, status, resp, err := s.repo.GetIdempotency(ctx, req.IdempotencyKey)
+		if err == nil {
+			if status == "COMPLETED" {
+				return TransferResult{TransferID: tid, State: "PROCESSED"}, nil
+			}
+			if status == "FAILED" {
+				// return stored error when possible
+				if resp == "insufficient_funds" {
+					return TransferResult{}, ErrInsufficientFunds
+				}
+				return TransferResult{}, errors.New(resp)
+			}
 		}
 	}
 
@@ -68,9 +77,17 @@ func (s *Service) Transfer(ctx context.Context, req TransferRequest) (TransferRe
 				case <-pollCtx.Done():
 					return TransferResult{}, errors.New("idempotency key in progress (timeout)")
 				case <-time.After(wait):
-					tid, status, err := s.repo.GetIdempotency(ctx, req.IdempotencyKey)
-					if err == nil && status == "COMPLETED" {
-						return TransferResult{TransferID: tid, State: "PROCESSED"}, nil
+					tid, status, resp, err := s.repo.GetIdempotency(ctx, req.IdempotencyKey)
+					if err == nil {
+						if status == "COMPLETED" {
+							return TransferResult{TransferID: tid, State: "PROCESSED"}, nil
+						}
+						if status == "FAILED" {
+							if resp == "insufficient_funds" {
+								return TransferResult{}, ErrInsufficientFunds
+							}
+							return TransferResult{}, errors.New(resp)
+						}
 					}
 				}
 			}
@@ -85,9 +102,17 @@ func (s *Service) Transfer(ctx context.Context, req TransferRequest) (TransferRe
 
 	// try to debit
 	if err := s.repo.DebitIfEnough(ctx, tx, req.FromWalletID, req.Amount); err != nil {
+		// mark transfer failed and finalize idempotency as FAILED
 		if uerr := s.repo.UpdateTransferState(ctx, tx, transferID, "FAILED"); uerr != nil {
 			tx.Rollback()
 			return TransferResult{}, uerr
+		}
+		// finalize idempotency if present
+		if req.IdempotencyKey != "" {
+			if cerr := s.repo.CompleteIdempotency(ctx, tx, req.IdempotencyKey, transferID, "FAILED", "insufficient_funds"); cerr != nil {
+				tx.Rollback()
+				return TransferResult{}, cerr
+			}
 		}
 		if cerr := tx.Commit(); cerr != nil {
 			return TransferResult{}, cerr
@@ -99,6 +124,12 @@ func (s *Service) Transfer(ctx context.Context, req TransferRequest) (TransferRe
 		if uerr := s.repo.UpdateTransferState(ctx, tx, transferID, "FAILED"); uerr != nil {
 			tx.Rollback()
 			return TransferResult{}, uerr
+		}
+		if req.IdempotencyKey != "" {
+			if cerr := s.repo.CompleteIdempotency(ctx, tx, req.IdempotencyKey, transferID, "FAILED", err.Error()); cerr != nil {
+				tx.Rollback()
+				return TransferResult{}, cerr
+			}
 		}
 		if cerr := tx.Commit(); cerr != nil {
 			return TransferResult{}, cerr
@@ -114,6 +145,12 @@ func (s *Service) Transfer(ctx context.Context, req TransferRequest) (TransferRe
 			tx.Rollback()
 			return TransferResult{}, uerr
 		}
+		if req.IdempotencyKey != "" {
+			if cerr := s.repo.CompleteIdempotency(ctx, tx, req.IdempotencyKey, transferID, "FAILED", err.Error()); cerr != nil {
+				tx.Rollback()
+				return TransferResult{}, cerr
+			}
+		}
 		if cerr := tx.Commit(); cerr != nil {
 			return TransferResult{}, cerr
 		}
@@ -123,6 +160,12 @@ func (s *Service) Transfer(ctx context.Context, req TransferRequest) (TransferRe
 		if uerr := s.repo.UpdateTransferState(ctx, tx, transferID, "FAILED"); uerr != nil {
 			tx.Rollback()
 			return TransferResult{}, uerr
+		}
+		if req.IdempotencyKey != "" {
+			if cerr := s.repo.CompleteIdempotency(ctx, tx, req.IdempotencyKey, transferID, "FAILED", err.Error()); cerr != nil {
+				tx.Rollback()
+				return TransferResult{}, cerr
+			}
 		}
 		if cerr := tx.Commit(); cerr != nil {
 			return TransferResult{}, cerr
@@ -136,7 +179,7 @@ func (s *Service) Transfer(ctx context.Context, req TransferRequest) (TransferRe
 	}
 
 	if req.IdempotencyKey != "" {
-		if err := s.repo.CompleteIdempotency(ctx, tx, req.IdempotencyKey, transferID); err != nil {
+		if err := s.repo.CompleteIdempotency(ctx, tx, req.IdempotencyKey, transferID, "COMPLETED", "PROCESSED"); err != nil {
 			tx.Rollback()
 			return TransferResult{}, err
 		}
