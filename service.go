@@ -104,7 +104,9 @@ func (s *Service) Transfer(ctx context.Context, req TransferRequest) (TransferRe
 
 	// try to debit
 	if err := s.repo.DebitIfEnough(ctx, tx, req.FromWalletID, req.Amount); err != nil {
-		// mark transfer failed and finalize idempotency as FAILED
+		// Debit failed: mark transfer FAILED and finalize the idempotency record
+		// with a terminal FAILED status and a stored response so retries
+		// return the same terminal outcome instead of polling indefinitely.
 		if uerr := s.repo.UpdateTransferState(ctx, tx, transferID, "FAILED"); uerr != nil {
 			tx.Rollback()
 			return TransferResult{}, uerr
