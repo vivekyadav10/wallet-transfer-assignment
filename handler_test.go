@@ -42,6 +42,7 @@ func TestCreateTransferHandler_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("post: %v", err)
 	}
+	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(res.Body)
 		t.Fatalf("unexpected status: %d body:%s", res.StatusCode, string(b))
@@ -85,6 +86,7 @@ func TestCreateTransferHandler_InsufficientFunds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("post: %v", err)
 	}
+	defer res.Body.Close()
 	if res.StatusCode != http.StatusUnprocessableEntity {
 		b, _ := io.ReadAll(res.Body)
 		t.Fatalf("expected 422 got %d body:%s", res.StatusCode, string(b))
@@ -119,6 +121,7 @@ func TestHandler_IdempotencyQuickReturn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("post: %v", err)
 	}
+	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(res.Body)
 		t.Fatalf("unexpected status: %d body:%s", res.StatusCode, string(b))
@@ -152,6 +155,7 @@ func TestCreateTransferHandler_MethodNotAllowed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
+	defer res.Body.Close()
 	if res.StatusCode != http.StatusMethodNotAllowed {
 		t.Fatalf("expected 405 got %d", res.StatusCode)
 	}
@@ -179,6 +183,7 @@ func TestCreateTransferHandler_BadJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("post: %v", err)
 	}
+	defer res.Body.Close()
 	if res.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected 400 got %d", res.StatusCode)
 	}
