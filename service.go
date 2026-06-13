@@ -41,12 +41,22 @@ func (s *Service) Transfer(ctx context.Context, req TransferRequest) (TransferRe
 	// try to insert idempotency record; if exists and completed return existing transfer
 	// if exists and in-progress, poll for completion
 
-	// Try quick path: check if completed
+	// Try quick path: check if completed.
+	// Validate that a completed idempotency record includes a transfer_id
+	// before returning. The repository stores `status` and `response`, so
+	// prefer the stored response as the canonical terminal state when present.
 	if req.IdempotencyKey != "" {
 		tid, status, resp, err := s.repo.GetIdempotency(ctx, req.IdempotencyKey)
 		if err == nil {
 			if status == "COMPLETED" {
-				return TransferResult{TransferID: tid, State: "PROCESSED"}, nil
+				if tid == "" {
+					return TransferResult{}, errors.New("idempotency record completed but missing transfer id")
+				}
+				state := "PROCESSED"
+				if resp != "" {
+					state = resp
+				}
+				return TransferResult{TransferID: tid, State: state}, nil
 			}
 			if status == "FAILED" {
 				// return stored error when possible
